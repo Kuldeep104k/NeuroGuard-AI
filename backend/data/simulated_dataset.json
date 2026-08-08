@@ -1,0 +1,22 @@
+[
+  {
+    "day": 1,
+    "input": "Severe headache and dizziness after injury",
+    "expected_risk": "high"
+  },
+  {
+    "day": 2,
+    "input": "Still tired, mild headache, poor sleep",
+    "expected_risk": "moderate"
+  },
+  {
+    "day": 4,
+    "input": "Feeling better, slight fatigue only",
+    "expected_risk": "low"
+  },
+  {
+    "day": 6,
+    "input": "No symptoms, normal activity resumed",
+    "expected_risk": "low"
+  }
+]

@@ -41,4 +41,50 @@ README.md
 
 Use `main` for stable baselines and `dev` for active implementation. Changes should be developed and verified on `dev`, then merged into `main` when ready.
 
-Setup and run instructions will be added as the application components are implemented.
+## Setup
+
+Python 3.10+ is recommended. From the repository root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\\Scripts\\activate
+python -m pip install -r requirements.txt
+```
+
+An `OPENAI_API_KEY` is optional. Without it, symptom extraction, planning, and retrieval use deterministic local fallbacks. With it, the OpenAI-compatible client can provide LLM-enhanced extraction and planning.
+
+## Run the backend
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+The API is available at `http://127.0.0.1:8000`. Interactive API documentation is available at `/docs`.
+
+Example request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/analyze \\
+  -H 'Content-Type: application/json' \\
+  -d '{"input_text":"Mild headache and fatigue after injury"}'
+```
+
+## Run the frontend
+
+With the backend running in another terminal:
+
+```bash
+streamlit run frontend/streamlit_app.py
+```
+
+## Run the benchmark
+
+```bash
+python evaluation/benchmark.py
+```
+
+The benchmark prints each expected/predicted risk and the overall accuracy. Assessments are logged to `backend/data/neuroguard.db` by default; set `NEUROGUARD_DB_PATH` to use another SQLite path.
+
+## Current development branch
+
+Implementation work is currently on `dev`. Keep API keys and other secrets in environment variables; do not commit them to the repository.
