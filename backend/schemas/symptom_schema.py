@@ -18,6 +18,15 @@ class SymptomSignals(BaseModel):
     noise_sensitivity: bool = False
     balance_problems: bool = False
     worsening: bool = False
+    seizure: bool = False
+    loss_of_consciousness: bool = False
+    confusion: bool = False
+    weakness_or_numbness: bool = False
+    slurred_speech: bool = False
+    unequal_pupils: bool = False
+    unable_to_wake: bool = False
+    unusual_behavior: bool = False
+    repeated_vomiting: bool = False
     symptom_count: int = Field(default=0, ge=0)
     severity: str = Field(default="mild", pattern="^(mild|moderate|severe|unknown)$")
     onset_or_day: Optional[int] = Field(default=None, ge=0)

@@ -12,22 +12,30 @@ Return JSON matching the SymptomSignals schema. Never diagnose, minimize danger,
 
 class SymptomExtractor:
     def __init__(self, llm: LLMClient | None = None) -> None:
-        self.llm = llm or LLMClient()
+        self.llm = None
 
     def extract(self, text: str) -> SymptomSignals:
-        result = self.llm.complete_json(SYSTEM_PROMPT, f"Extract signals from this report:\n{text}")
-        if result:
-            try:
-                return SymptomSignals.model_validate({**result, "raw_text": text})
-            except Exception:
-                pass
         return self._local_extract(text)
+
+    @property
+    def mode(self) -> str:
+        return "local"
 
     def _local_extract(self, text: str) -> SymptomSignals:
         lower = text.lower()
 
         def has(*terms: str) -> bool:
-            return any(term in lower for term in terms)
+            """Match explicit symptom language while respecting simple negation."""
+            for term in terms:
+                for match in re.finditer(re.escape(term), lower):
+                    prefix = lower[max(0, match.start() - 32):match.start()]
+                    # Do not let a negation from a previous clause (for
+                    # example, "no vomiting; only mild fatigue") leak into
+                    # the next symptom statement.
+                    prefix = re.split(r"[,;:]", prefix)[-1]
+                    if not re.search(r"\b(no|not|without|denies|denied|never)\b[^.!?]{0,24}$", prefix):
+                        return True
+            return False
 
         signals = {
             "headache": has("headache", "head pain", "migraine"),
@@ -42,6 +50,15 @@ class SymptomExtractor:
             "noise_sensitivity": has("noise sensitive", "sensitive to noise", "sound sensitive"),
             "balance_problems": has("balance", "unsteady", "stumbling"),
             "worsening": has("worsening", "getting worse", "worse", "deteriorat"),
+            "seizure": has("seizure", "convulsion", "shaking or twitching"),
+            "loss_of_consciousness": has("loss of consciousness", "passed out", "knocked out", "blackout"),
+            "confusion": has("confus", "cannot recognize", "can't recognize", "disoriented"),
+            "weakness_or_numbness": has("weakness", "numbness", "decreased coordination"),
+            "slurred_speech": has("slurred speech", "slurring words"),
+            "unequal_pupils": has("unequal pupils", "one pupil larger", "double vision"),
+            "unable_to_wake": has("cannot wake", "can't wake", "unable to wake", "cannot stay awake"),
+            "unusual_behavior": has("unusual behavior", "agitated", "restless", "personality change"),
+            "repeated_vomiting": has("repeated vomiting", "vomiting repeatedly", "vomited multiple times"),
         }
         explicit_no_symptoms = has("no symptoms", "symptom-free", "symptom free")
         count = sum(value for key, value in signals.items() if key != "worsening")

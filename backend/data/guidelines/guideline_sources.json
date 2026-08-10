@@ -1,0 +1,54 @@
+[
+  {
+    "id": "bjsm-amsterdam-2023",
+    "title": "6th International Conference on Concussion in Sport - Amsterdam 2022 Consensus Statement",
+    "publisher": "British Journal of Sports Medicine",
+    "published": "2023-06-14",
+    "url": "https://bjsm.bmj.com/content/57/11/695",
+    "claims": [
+      "Relative rest with activities of daily living is preferred to strict rest during the first 24-48 hours.",
+      "Light physical activity such as walking can begin within 24-48 hours when tolerated and without meaningful symptom worsening.",
+      "Reduced screen use is most relevant during the first 48 hours.",
+      "Persistent dizziness, balance problems, neck pain, or headaches may warrant cervicovestibular rehabilitation and clinical reassessment.",
+      "Return-to-learn and return-to-sport decisions should be gradual, individualized, and symptom-guided."
+    ]
+  },
+  {
+    "id": "cdc-return-activities-2025",
+    "title": "Managing Return to Activities",
+    "publisher": "Centers for Disease Control and Prevention HEADS UP",
+    "published": "2025-07-28",
+    "url": "https://www.cdc.gov/heads-up/hcp/clinical-guidance/index.html",
+    "claims": [
+      "Return to daily activities, school, work, and sport should be individualized and guided by symptoms and cognitive function.",
+      "Symptoms that return or worsen during exertion should guide a reduction in activity and clinical follow-up.",
+      "Return-to-play progression requires monitoring after each step and should pause when new symptoms appear.",
+      "Referral should be considered when symptoms worsen, persist beyond 2-4 weeks, or risk factors for prolonged recovery are present."
+    ]
+  },
+  {
+    "id": "cdc-recovery-2025",
+    "title": "What to do After a Concussion",
+    "publisher": "Centers for Disease Control and Prevention HEADS UP",
+    "published": "2025-09-15",
+    "url": "https://www.cdc.gov/heads-up/guidelines/recovery-from-concussion.html",
+    "claims": [
+      "A person with a possible concussion should be evaluated by a healthcare provider.",
+      "Light physical activity such as walking may be appropriate early in recovery, while sports and re-injury risk should be avoided until cleared.",
+      "Students may return to school within 1-2 days with accommodations that are gradually reduced as function improves.",
+      "Symptoms lasting longer than 2-4 weeks or worsening symptoms warrant healthcare-provider follow-up and possible specialist referral."
+    ]
+  },
+  {
+    "id": "concussion-alliance-recovery",
+    "title": "Guidelines for Recovery",
+    "publisher": "Concussion Alliance",
+    "published": "2026-08-08",
+    "url": "https://www.concussionalliance.org/recovery-guide",
+    "claims": [
+      "Recovery guidance should discourage prolonged isolation or cocooning and support relative rest.",
+      "Activity should be reduced when symptoms increase more than mildly or remain elevated after exercise.",
+      "Social connection and mental well-being are relevant parts of concussion recovery."
+    ]
+  }
+]

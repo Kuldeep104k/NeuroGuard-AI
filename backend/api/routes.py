@@ -1,46 +1,58 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, Response
 
+from backend.config import ADMIN_TOKEN, AI_MODE, MAX_LLM_RPD, MAX_LLM_RPM
 from backend.db.database import Database
-from backend.schemas.plan_schema import AnalyzeRequest, AnalyzeResponse
+from backend.schemas.ai_schema import UnifiedAIResponse
+from backend.schemas.plan_schema import AnalyzeRequest
 from backend.schemas.risk_schema import HistoricalAssessment
-from backend.services.explainability import Explainability
-from backend.services.guardrails import Guardrails
-from backend.services.planner import Planner
-from backend.services.rag_engine import RAGEngine
-from backend.services.risk_engine import RiskEngine
-from backend.services.symptom_extractor import SymptomExtractor
+from backend.services.unified_ai_engine import UnifiedAIEngine
 
 
 router = APIRouter()
-extractor = SymptomExtractor()
-risk_engine = RiskEngine()
-rag = RAGEngine()
-planner = Planner(rag=rag)
-guardrails = Guardrails()
-explainability = Explainability()
 database = Database()
+unified_engine = UnifiedAIEngine(database=database)
 
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "neuroguard-ai"}
+    return {
+        "status": "ok",
+        "service": "neuroguard-ai",
+        "ai_mode": AI_MODE,
+        "llm_policy": "max_one_call_per_request",
+    }
 
 
-@router.post("/analyze", response_model=AnalyzeResponse)
-def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
-    symptoms = extractor.extract(request.input_text)
+@router.delete("/privacy/logs")
+def delete_logs(x_admin_token: str | None = Header(default=None)) -> dict[str, int]:
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="Privacy deletion endpoint is not configured.")
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid privacy administration token.")
+    return {"deleted": database.delete_all()}
+
+
+@router.get("/usage")
+def usage(x_admin_token: str | None = Header(default=None)) -> dict[str, int | str]:
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="Usage endpoint is not configured.")
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid privacy administration token.")
+    snapshot = database.usage_snapshot(MAX_LLM_RPM, MAX_LLM_RPD)
+    return {"ai_mode": AI_MODE, **snapshot}
+
+
+@router.post("/analyze", response_model=UnifiedAIResponse)
+def analyze(request: AnalyzeRequest, response: Response) -> UnifiedAIResponse:
     history = [HistoricalAssessment.model_validate(item) for item in request.history]
-    risk = risk_engine.assess(symptoms, history)
-    plan = planner.create(symptoms, risk)
-    generated = " ".join(plan.recommendations + plan.restrictions + [plan.escalation])
-    safe = guardrails.assess(symptoms, generated)
-    if safe.emergency and safe.escalation_message:
-        plan.recommendations = [safe.escalation_message]
-    plan.recommendations = [guardrails.sanitize(item) for item in plan.recommendations]
-    evidence = rag.retrieve(request.input_text)
-    explanation = explainability.explain(symptoms, risk, evidence)
-    response = AnalyzeResponse(symptoms=symptoms.model_dump(), risk=risk.model_dump(), plan=plan.model_dump(), safe=safe.model_dump(), explanation=explanation)
-    database.log_response(request.input_text, response.model_dump())
-    return response
+    result = unified_engine.analyze(request.input_text, history=history, day=request.day)
+    response.headers["X-NeuroGuard-AI-Mode"] = unified_engine.last_mode
+    response.headers["X-NeuroGuard-LLM-Calls"] = str(unified_engine.last_llm_calls)
+    response.headers["X-NeuroGuard-Rate-Limit"] = "10-rpm;50-rpd"
+    if unified_engine.last_llm_calls and unified_engine.last_mode == "local":
+        response.headers["X-NeuroGuard-LLM-Status"] = "fallback"
+    payload = result.model_dump()
+    database.log_response(request.input_text, payload)
+    return UnifiedAIResponse(**payload)

@@ -19,6 +19,7 @@ class RecoveryPlan(BaseModel):
 class SafetyStatus(BaseModel):
     safe: bool
     emergency: bool = False
+    normal_plan_suppressed: bool = False
     blocked_reasons: list[str] = Field(default_factory=list)
     escalation_message: str | None = None
     disclaimer: str
@@ -27,11 +28,12 @@ class SafetyStatus(BaseModel):
 class AnalyzeRequest(BaseModel):
     input_text: str = Field(min_length=1, max_length=5000)
     history: list[dict] = Field(default_factory=list)
+    day: int | None = Field(default=None, ge=0, le=3650)
 
 
 class AnalyzeResponse(BaseModel):
     symptoms: dict
     risk: dict
     plan: dict
-    safe: dict
     explanation: str
+    safety: dict
