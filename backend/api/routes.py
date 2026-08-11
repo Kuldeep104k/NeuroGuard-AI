@@ -47,7 +47,12 @@ def usage(x_admin_token: str | None = Header(default=None)) -> dict[str, int | s
 @router.post("/analyze", response_model=UnifiedAIResponse)
 def analyze(request: AnalyzeRequest, response: Response) -> UnifiedAIResponse:
     history = [HistoricalAssessment.model_validate(item) for item in request.history]
-    result = unified_engine.analyze(request.input_text, history=history, day=request.day)
+    result = unified_engine.analyze(
+        request.input_text,
+        history=history,
+        day=request.day,
+        structured_answers=request.structured_answers,
+    )
     response.headers["X-NeuroGuard-AI-Mode"] = unified_engine.last_mode
     response.headers["X-NeuroGuard-LLM-Calls"] = str(unified_engine.last_llm_calls)
     response.headers["X-NeuroGuard-Rate-Limit"] = "10-rpm;50-rpd"

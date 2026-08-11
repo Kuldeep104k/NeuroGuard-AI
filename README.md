@@ -57,6 +57,8 @@ Hosted structured-output inference is opt-in only. Set `NEUROGUARD_AI_MODE=opena
 
 The recovery API also accepts an optional `day` field and prior `history` records so the recommended stage can evolve over a longitudinal recovery timeline. Retrieved evidence is included in the explanation.
 
+The request may also include optional `structured_answers` for direct observations such as headache intensity, dizziness, fatigue, sleep, mood, symptom change, activity response, vomiting, and urgent warning signs. These selectable answers supplement free text and take precedence for ordinary fields while dangerous contradictions are resolved conservatively.
+
 ## API usage limits and unified AI call
 
 Each `POST /analyze` request performs local symptom/risk preprocessing and makes **at most one** LLM call. The symptom extraction, risk result, recovery plan, explanation, and safety result are requested together as one strict JSON response. RAG retrieval and all evaluation scripts are local and do not consume LLM quota.
@@ -97,6 +99,25 @@ Example request:
 curl -X POST http://127.0.0.1:8000/analyze \\
   -H 'Content-Type: application/json' \\
   -d '{"input_text":"Mild headache and fatigue after injury"}'
+```
+
+Example structured check-in:
+
+```json
+{
+  "input_text": "I felt worse after schoolwork",
+  "day": 3,
+  "structured_answers": {
+    "headache_level": 5,
+    "dizziness": false,
+    "fatigue": "medium",
+    "sleep_quality": "poor",
+    "symptom_change": "worsening",
+    "activity_response": "worsened",
+    "vomiting": "none",
+    "emergency_signs": []
+  }
+}
 ```
 
 ## Run the frontend

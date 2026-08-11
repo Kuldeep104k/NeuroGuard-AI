@@ -12,6 +12,7 @@ from backend.api.routes import unified_engine
 from backend.db.database import Database
 from backend.main import app
 from backend.schemas.ai_schema import UnifiedAIResponse
+from backend.schemas.symptom_schema import StructuredCheckIn
 from backend.services import unified_ai_engine as engine_module
 from backend.services.unified_ai_engine import UnifiedAIEngine
 
@@ -90,6 +91,33 @@ class OfflineRegressionTests(unittest.TestCase):
         self.assertEqual(result.risk.risk_level, "high")
         self.assertEqual(result.plan.stage, 1)
 
+    def test_structured_answers_override_ambiguous_free_text(self):
+        engine_module.AI_MODE = "local"
+        result = UnifiedAIEngine(database=self.database).analyze(
+            "I am unsure how bad it is",
+            structured_answers=StructuredCheckIn(
+                headache_level=7,
+                dizziness=True,
+                fatigue="high",
+                sleep_quality="poor",
+                symptom_change="worsening",
+            ),
+        )
+        self.assertEqual(result.symptoms.headache, 7)
+        self.assertTrue(result.symptoms.dizziness)
+        self.assertEqual(result.symptoms.fatigue, "high")
+        self.assertEqual(result.symptoms.sleep_quality, "poor")
+        self.assertEqual(result.risk.risk_level, "high")
+
+    def test_structured_emergency_sign_is_prioritized(self):
+        engine_module.AI_MODE = "local"
+        result = UnifiedAIEngine(database=self.database).analyze(
+            "I feel okay",
+            structured_answers=StructuredCheckIn(emergency_signs=["confusion"]),
+        )
+        self.assertFalse(result.safety.safe)
+        self.assertEqual(result.plan.stage, 1)
+
     def test_rate_gate_allows_ten_and_blocks_eleven(self):
         for _ in range(10):
             self.assertTrue(self.database.reserve_llm_call(10, 50))
@@ -110,6 +138,21 @@ class OfflineRegressionTests(unittest.TestCase):
             ["explanation", "plan", "risk", "safety", "symptoms"],
         )
         self.assertEqual(response.headers["x-neuroguard-llm-calls"], "0")
+
+    def test_api_rejects_empty_check_in(self):
+        client = TestClient(app)
+        response = client.post("/analyze", json={"input_text": "", "structured_answers": {}})
+        self.assertEqual(response.status_code, 422)
+
+    def test_api_accepts_structured_only_check_in(self):
+        client = TestClient(app)
+        response = client.post(
+            "/analyze",
+            json={"structured_answers": {"headache_level": 4, "fatigue": "medium"}},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["symptoms"]["headache"], 4)
+        self.assertEqual(response.json()["symptoms"]["fatigue"], "medium")
 
 
 if __name__ == "__main__":

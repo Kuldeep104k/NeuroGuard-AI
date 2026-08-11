@@ -49,9 +49,6 @@ class Guardrails:
             emergency_reasons.append("unequal pupils or double vision")
         if symptoms.unusual_behavior:
             emergency_reasons.append("unusual behavior, agitation, or restlessness")
-        if symptoms.worsening and "worsening condition" not in emergency_reasons:
-            emergency_reasons.append("worsening condition")
-
         combined_text = f"{input_text}\n{generated_text}".lower()
         blocked = sorted({pattern for pattern in UNSAFE_PATTERNS if re.search(pattern, combined_text)})
         emergency = bool(emergency_reasons)

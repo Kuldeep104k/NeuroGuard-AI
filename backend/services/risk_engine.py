@@ -21,16 +21,20 @@ class RiskEngine:
         }
         score = min(100, sum(weight for name, weight in weights.items() if getattr(symptoms, name)))
         factors = [name.replace("_", " ") for name, weight in weights.items() if getattr(symptoms, name) and weight >= 8]
-        prior = list(history)
-        trend = "stable"
+        prior = sorted(list(history), key=lambda assessment: assessment.day)
+        trend = "worsening" if symptoms.worsening else symptoms.symptom_change or "stable"
         if prior:
             previous = prior[-1].score
-            if score > previous + 5:
+            if symptoms.symptom_change == "worsening" or score > previous + 5:
                 trend = "worsening"
                 score = min(100, score + 10)
                 factors.append("worsening trend compared with history")
-            elif score < previous - 5:
+            elif symptoms.symptom_change == "improving" or score < previous - 5:
                 trend = "improving"
+            if len(prior) >= 2 and prior[-1].score > prior[-2].score + 5 and trend != "worsening":
+                trend = "worsening"
+                score = min(100, score + 5)
+                factors.append("recent upward trend across check-ins")
         if symptoms.severity == "severe" or any(
             getattr(symptoms, name)
             for name in (

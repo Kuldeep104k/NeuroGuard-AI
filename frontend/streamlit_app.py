@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+from html import escape
 import re
 
 import requests
@@ -16,13 +18,26 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .block-container { max-width: 1180px; padding-top: 2rem; }
-    .hero { padding: 1.4rem 1.6rem; border-radius: 1rem; background: linear-gradient(135deg, #e8f7f7, #f7fbfb); border: 1px solid #b8e1e1; }
-    .hero h1 { margin-bottom: .25rem; color: #123d4a; }
-    .stage-card { padding: 1rem; border-radius: .8rem; border: 1px solid #d5e3e6; background: #fff; min-height: 8rem; }
+    .block-container { max-width: 1180px; padding-top: 1.4rem; padding-bottom: 4rem; }
+    .hero { padding: 1.6rem 1.8rem; border-radius: 1.2rem; background: linear-gradient(135deg, #e6f7f7, #f8fcfc); border: 1px solid #a9dfe0; box-shadow: 0 8px 24px rgba(18, 61, 74, .08); }
+    .hero h1 { margin: 0 0 .35rem 0; color: #123d4a; letter-spacing: -.02em; }
+    .hero p { color: #315965; margin: .3rem 0; }
+    .status-pill { display: inline-block; margin-top: .7rem; padding: .35rem .7rem; border-radius: 999px; background: #d7f2e4; color: #155b39; font-size: .82rem; font-weight: 700; }
+    .section-kicker { color: #2b7a7b; text-transform: uppercase; letter-spacing: .08em; font-size: .76rem; font-weight: 800; margin-top: 1.3rem; }
+    .quick-card { padding: .85rem 1rem; border-radius: .8rem; border: 1px solid #d5e3e6; background: rgba(255,255,255,.72); min-height: 6.3rem; }
+    .quick-card strong { color: #123d4a; }
     .muted { color: #52666d; font-size: .92rem; }
-    .emergency { padding: 1rem; border-radius: .8rem; background: #fff0f0; border: 2px solid #d43d3d; color: #6f1111; }
-    .disclaimer { padding: .85rem 1rem; border-left: 4px solid #2ca6a4; background: #f2f8f8; }
+    .emergency { padding: 1.1rem 1.2rem; border-radius: 1rem; background: #fff0f0; border: 2px solid #d43d3d; color: #6f1111; box-shadow: 0 6px 18px rgba(212,61,61,.12); }
+    .disclaimer { padding: .9rem 1rem; border-left: 4px solid #2ca6a4; background: #f2f8f8; border-radius: .3rem; }
+    [data-testid="stForm"] { border: 1px solid #d5e3e6; border-radius: 1rem; padding: 1rem 1.1rem .8rem; background: rgba(255,255,255,.35); }
+    [data-testid="stMetricValue"] { letter-spacing: -.03em; }
+    .trajectory { display: flex; gap: .55rem; overflow-x: auto; padding: .8rem .2rem 1rem; }
+    .trajectory-item { min-width: 8.2rem; padding: .8rem; border-radius: .85rem; border: 1px solid #d5e3e6; background: #fff; box-shadow: 0 3px 10px rgba(18,61,74,.06); }
+    .trajectory-score { font-size: 1.35rem; font-weight: 800; color: #123d4a; }
+    .trajectory-meta { color: #52666d; font-size: .82rem; margin-top: .2rem; }
+    .trajectory-low { border-top: 4px solid #2ca66f; }
+    .trajectory-moderate { border-top: 4px solid #e2a52e; }
+    .trajectory-high { border-top: 4px solid #d43d3d; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -146,46 +161,185 @@ def render_handoff(result: dict) -> None:
         )
 
 
+def render_detected_signals(symptoms: dict) -> None:
+    detected: list[str] = []
+    headache = int(symptoms.get("headache", 0) or 0)
+    if headache:
+        detected.append(f"headache {headache}/10")
+    if symptoms.get("dizziness"):
+        detected.append("dizziness")
+    if symptoms.get("fatigue") in {"medium", "high"}:
+        detected.append(f"{symptoms['fatigue']} fatigue")
+    if symptoms.get("sleep_quality") == "poor":
+        detected.append("poor sleep")
+    if symptoms.get("mood") in {"anxious", "depressed"}:
+        detected.append(symptoms["mood"])
+    st.write(", ".join(detected) if detected else "No directly detected symptoms in the structured result.")
+
+
+def render_trajectory(timeline: list[dict]) -> None:
+    """Show the recovery story without requiring a charting dependency."""
+    if not timeline:
+        return
+
+    ordered = sorted(enumerate(timeline), key=lambda item: (item[1].get("day", 0), item[0]))
+    points = [item for _, item in ordered]
+    latest = points[-1]
+    latest_score = float(latest.get("score", 0))
+    st.subheader("Recovery trajectory")
+
+    if len(points) >= 2:
+        first_score = float(points[0].get("score", 0))
+        delta = latest_score - first_score
+        if delta < 0:
+            direction = f"Improving: risk score {first_score:g} → {latest_score:g}."
+        elif delta > 0:
+            direction = f"Worsening: risk score {first_score:g} → {latest_score:g}."
+        else:
+            direction = f"Stable: risk score remains {latest_score:g}."
+        st.caption(direction + " Progress only while symptoms remain controlled.")
+    else:
+        st.caption("One check-in recorded. Add another check-in to see whether recovery is improving, stable, or worsening.")
+
+    st.progress(
+        max(0.0, min(1.0, latest_score / 100)),
+        text=f"Current risk score: {latest_score:g}/100 · Recovery day {latest.get('day', 0)}",
+    )
+
+    cards: list[str] = []
+    for point in points:
+        risk_level = str(point.get("risk_level", "unknown")).lower()
+        risk_class = risk_level if risk_level in {"low", "moderate", "high"} else "moderate"
+        score = float(point.get("score", 0))
+        day_value = escape(str(point.get("day", 0)))
+        stage = point.get("stage")
+        stage_label = f"Stage {escape(str(stage))}" if stage else "Check-in"
+        cards.append(
+            f'<div class="trajectory-item trajectory-{risk_class}" '
+            f'aria-label="Recovery day {day_value}, risk score {score:g}, {risk_level} risk">'
+            f'<div class="trajectory-meta">Day {day_value}</div>'
+            f'<div class="trajectory-score">{score:g}/100</div>'
+            f'<div class="trajectory-meta">{escape(risk_level.upper())} risk · {stage_label}</div>'
+            "</div>"
+        )
+    st.markdown('<div class="trajectory">' + "".join(cards) + "</div>", unsafe_allow_html=True)
+
+    # Keep the underlying data visible for screen readers and precise review.
+    table_rows = [
+        {
+            "Check-in date": point.get("checkin_date", "—"),
+            "Recovery day": point.get("day", 0),
+            "Risk score": point.get("score", 0),
+            "Risk level": str(point.get("risk_level", "unknown")).upper(),
+            "Stage": point.get("stage", "—"),
+        }
+        for point in points
+    ]
+    st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+
 st.markdown(
     '<div class="hero"><h1>🧠 NeuroGuard AI</h1>'
     '<p class="muted">A privacy-conscious, evidence-grounded concussion recovery companion.</p>'
-    "<p><strong>Use this to organize a check-in, not to diagnose or replace professional care.</strong></p></div>",
+    "<p><strong>A calmer way to record symptoms, understand today’s next step, and notice when recovery needs professional attention.</strong></p>"
+    '<span class="status-pill">● Local-first · private by default · no API key required</span></div>',
     unsafe_allow_html=True,
 )
 
+st.markdown('<div class="section-kicker">A simple three-step check-in</div>', unsafe_allow_html=True)
+quick_left, quick_middle, quick_right = st.columns(3)
+with quick_left:
+    st.markdown('<div class="quick-card"><strong>1 · Describe</strong><br><span class="muted">Write what changed today, in your own words.</span></div>', unsafe_allow_html=True)
+with quick_middle:
+    st.markdown('<div class="quick-card"><strong>2 · Clarify</strong><br><span class="muted">Use optional selections for severity, trend, and warning signs.</span></div>', unsafe_allow_html=True)
+with quick_right:
+    st.markdown('<div class="quick-card"><strong>3 · Understand</strong><br><span class="muted">Review a conservative plan, evidence, and safety guidance.</span></div>', unsafe_allow_html=True)
+
 if "timeline" not in st.session_state:
     st.session_state.timeline = []
+if "next_recovery_day" not in st.session_state:
+    st.session_state.next_recovery_day = 1
 
 with st.sidebar:
     st.header("Check-in settings")
-    api_url = st.text_input("Backend URL", "http://127.0.0.1:8000")
-    day = st.number_input("Recovery day", min_value=0, max_value=3650, value=1, step=1)
-    st.caption("Use the day after injury to make stage guidance longitudinal.")
+    st.metric("Next check-in", f"Day {st.session_state.next_recovery_day}")
+    st.caption("Each successful check-in advances the recovery timeline automatically. Previous check-ins remain visible below.")
+    api_url = "http://127.0.0.1:8000"
+    with st.expander("Advanced connection settings", expanded=False):
+        api_url = st.text_input("Backend URL", api_url, help="The frontend sends check-ins to this backend service.")
     if st.button("Clear local timeline"):
         st.session_state.timeline = []
+        st.session_state.pop("latest", None)
+        st.session_state.next_recovery_day = 1
         st.rerun()
+    if st.button("Start new recovery timeline", type="secondary", use_container_width=True):
+        st.session_state.timeline = []
+        st.session_state.pop("latest", None)
+        st.session_state.next_recovery_day = 1
+        st.rerun()
+    st.caption("Use this for a new person or injury. It clears this browser session’s stored check-ins and starts again at Day 1.")
     st.divider()
     st.caption("Privacy: symptom text is sent to the configured backend. The backend redacts raw text from logs by default.")
 
-input_text = st.text_area(
-    "Daily symptom check-in",
-    placeholder="Example: Mild headache after 20 minutes of schoolwork; walking felt okay.",
-    height=130,
-    help="Describe what changed today, what activity you tried, and whether symptoms improved or worsened.",
-)
+structured_answers: dict = {}
+with st.form("check_in_form", clear_on_submit=False):
+    with st.expander("Optional guided questions", expanded=True):
+        st.caption("Nothing is sent until you press Analyze check-in. Choose only what you know.")
+        question_left, question_middle, question_right = st.columns(3)
+        with question_left:
+            headache_level = st.selectbox("Headache today", ["Not answered", *range(0, 11)], help="0 means no headache; 10 is the worst headache you can imagine.")
+            dizziness = st.selectbox("Dizziness or balance trouble", ["Not answered", "No", "Yes"])
+            fatigue = st.selectbox("Fatigue level", ["Not answered", "low", "medium", "high"])
+        with question_middle:
+            sleep_quality = st.selectbox("Sleep quality", ["Not answered", "good", "poor"])
+            mood = st.selectbox("Mood", ["Not answered", "calm", "anxious", "depressed"])
+            symptom_change = st.selectbox("Compared with the last check-in", ["Not answered", "improving", "stable", "worsening"])
+        with question_right:
+            activity_response = st.selectbox("Response to activity", ["Not answered", "tolerated", "worsened", "not_tried"])
+            vomiting = st.selectbox("Vomiting", ["Not answered", "none", "once", "repeated"])
+            emergency_labels = {
+                "Seizure or convulsion": "seizure",
+                "Loss of consciousness": "loss_of_consciousness",
+                "Confusion or disorientation": "confusion",
+                "Slurred speech": "slurred_speech",
+                "Weakness or numbness": "weakness_or_numbness",
+                "Unequal pupils or double vision": "unequal_pupils",
+                "Unable to wake or stay awake": "unable_to_wake",
+                "Repeated vomiting": "repeated_vomiting",
+            }
+            selected_emergency = st.multiselect("Urgent warning signs", list(emergency_labels), help="Select any that are present now. The safety layer will prioritize urgent escalation.")
+        if headache_level != "Not answered":
+            structured_answers["headache_level"] = int(headache_level)
+        if dizziness != "Not answered":
+            structured_answers["dizziness"] = dizziness == "Yes"
+        for key, value in (("fatigue", fatigue), ("sleep_quality", sleep_quality), ("mood", mood), ("symptom_change", symptom_change), ("activity_response", activity_response), ("vomiting", vomiting)):
+            if value != "Not answered":
+                structured_answers[key] = value
+        if selected_emergency:
+            structured_answers["emergency_signs"] = [emergency_labels[label] for label in selected_emergency]
 
-if st.button("Analyze check-in", type="primary", use_container_width=True):
-    if not input_text.strip():
-        st.warning("Enter a symptom check-in first.")
+    input_text = st.text_area(
+        "Daily symptom check-in",
+        placeholder="Example: Mild headache after 20 minutes of schoolwork; walking felt okay.",
+        height=130,
+        help="Describe what changed today, what activity you tried, and whether symptoms improved or worsened.",
+    )
+    st.caption("You can use the written description, the guided questions, or both.")
+    submitted = st.form_submit_button("Analyze check-in", type="primary", use_container_width=True)
+
+if submitted:
+    if not input_text.strip() and not structured_answers:
+        st.warning("Add a written check-in or answer at least one structured question.")
     else:
         try:
+            day = int(st.session_state.next_recovery_day)
             history = [
                 {"day": item["day"], "score": item["score"], "risk_level": item["risk_level"]}
                 for item in st.session_state.timeline
             ]
             response = requests.post(
                 f"{api_url.rstrip('/')}/analyze",
-                json={"input_text": input_text, "day": int(day), "history": history},
+                json={"input_text": input_text, "day": int(day), "history": history, "structured_answers": structured_answers},
                 timeout=30,
             )
             response.raise_for_status()
@@ -197,13 +351,16 @@ if st.button("Analyze check-in", type="primary", use_container_width=True):
             st.session_state.latest_ai_mode = response.headers.get("X-NeuroGuard-AI-Mode", "unknown")
             st.session_state.latest_llm_calls = response.headers.get("X-NeuroGuard-LLM-Calls", "unknown")
             st.session_state.latest = result
-            st.session_state.timeline.append(
-                {
-                    "day": int(day),
-                    "score": result["risk"]["score"],
-                    "risk_level": result["risk"]["risk_level"],
-                }
-            )
+            timeline_entry = {
+                "checkin_date": date.today().isoformat(),
+                "day": int(day),
+                "score": result["risk"]["score"],
+                "risk_level": result["risk"]["risk_level"],
+                "stage": result["plan"]["stage"],
+            }
+            st.session_state.timeline.append(timeline_entry)
+            st.session_state.next_recovery_day = day + 1
+            st.rerun()
         except requests.RequestException as error:
             st.error(f"Could not reach the backend: {error}")
 
@@ -233,25 +390,7 @@ if result:
         "policy=max 1 call/request"
     )
 
-    if len(st.session_state.timeline) >= 2:
-        st.subheader("Recovery trend")
-        first_score = st.session_state.timeline[0]["score"]
-        latest_score = st.session_state.timeline[-1]["score"]
-        if latest_score < first_score:
-            st.caption(f"Trend: improving ({first_score} → {latest_score}). Continue progressing only while symptoms remain controlled.")
-        elif latest_score > first_score:
-            st.caption(f"Trend: worsening ({first_score} → {latest_score}). Pause progression and seek professional guidance.")
-        else:
-            st.caption(f"Trend: stable at {latest_score}. Continue monitoring symptoms and tolerance.")
-        st.line_chart(
-            [item["score"] for item in st.session_state.timeline],
-            x_label="Check-in",
-            y_label="Risk score",
-        )
-        st.table(st.session_state.timeline)
-    elif st.session_state.timeline:
-        st.subheader("Recovery trend")
-        st.caption("One check-in recorded. Complete another daily check-in to see a recovery trend.")
+    render_trajectory(st.session_state.timeline)
 
     plan_left, plan_right = st.columns([1.5, 1])
     with plan_left:
@@ -260,7 +399,7 @@ if result:
         st.subheader("Why this result?")
         st.write(result["explanation"])
         st.markdown("**Signals detected**")
-        st.write(result["risk"].get("factors", "See the unified explanation and safety result."))
+        render_detected_signals(result["symptoms"])
 
     render_evidence(result["plan"], result["explanation"])
     render_handoff(result)

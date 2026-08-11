@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,37 @@ class SymptomSignals(BaseModel):
     severity: str = Field(default="mild", pattern="^(mild|moderate|severe|unknown)$")
     onset_or_day: Optional[int] = Field(default=None, ge=0)
     raw_text: str = ""
+    headache_level: int | None = Field(default=None, ge=0, le=10)
+    fatigue_level: Literal["low", "medium", "high"] | None = None
+    sleep_quality: Literal["good", "poor"] | None = None
+    mood: Literal["calm", "anxious", "depressed"] | None = None
+    symptom_change: Literal["improving", "stable", "worsening"] | None = None
+    activity_response: Literal["tolerated", "worsened", "not_tried"] | None = None
+
+
+class StructuredCheckIn(BaseModel):
+    """Optional direct observations that disambiguate free-text language."""
+
+    headache_level: int | None = Field(default=None, ge=0, le=10)
+    dizziness: bool | None = None
+    fatigue: Literal["low", "medium", "high"] | None = None
+    sleep_quality: Literal["good", "poor"] | None = None
+    mood: Literal["calm", "anxious", "depressed"] | None = None
+    symptom_change: Literal["improving", "stable", "worsening"] | None = None
+    activity_response: Literal["tolerated", "worsened", "not_tried"] | None = None
+    vomiting: Literal["none", "once", "repeated"] | None = None
+    emergency_signs: list[
+        Literal[
+            "seizure",
+            "loss_of_consciousness",
+            "confusion",
+            "slurred_speech",
+            "weakness_or_numbness",
+            "unequal_pupils",
+            "unable_to_wake",
+            "repeated_vomiting",
+        ]
+    ] = Field(default_factory=list, max_length=8)
 
 
 class SymptomExtractionRequest(BaseModel):

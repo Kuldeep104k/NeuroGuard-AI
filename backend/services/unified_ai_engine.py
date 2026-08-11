@@ -13,6 +13,7 @@ from backend.schemas.ai_schema import (
     UnifiedSymptoms,
 )
 from backend.schemas.risk_schema import HistoricalAssessment
+from backend.schemas.symptom_schema import StructuredCheckIn
 from backend.services.explainability import Explainability
 from backend.services.guardrails import Guardrails
 from backend.services.llm_client import LLMClient
@@ -112,9 +113,10 @@ class UnifiedAIEngine:
         input_text: str,
         history: list[HistoricalAssessment] | None = None,
         day: int | None = None,
+        structured_answers: StructuredCheckIn | None = None,
     ) -> UnifiedAIResponse:
         history = history or []
-        local_symptoms = self.extractor.extract(input_text)
+        local_symptoms = self.extractor.extract(input_text, structured_answers=structured_answers)
         local_risk = self.risk_engine.assess(local_symptoms, history)
         evidence = self.rag.retrieve(" ".join(local_risk.factors) + " " + input_text)
         self.last_mode = "local"
@@ -129,7 +131,14 @@ class UnifiedAIEngine:
             try:
                 model_result = self.llm.complete_structured(
                     UNIFIED_SYSTEM_PROMPT,
-                    self._user_prompt(input_text, local_symptoms.model_dump(), local_risk.model_dump(), day, evidence),
+                    self._user_prompt(
+                        input_text,
+                        local_symptoms.model_dump(),
+                        local_risk.model_dump(),
+                        day,
+                        evidence,
+                        structured_answers.model_dump(exclude_none=True) if structured_answers else {},
+                    ),
                     UNIFIED_JSON_SCHEMA,
                 )
             except Exception:
@@ -154,6 +163,7 @@ class UnifiedAIEngine:
         risk: dict,
         day: int | None,
         evidence: list[str],
+        structured_answers: dict,
     ) -> str:
         payload = {
             "report": input_text,
@@ -161,6 +171,7 @@ class UnifiedAIEngine:
             "local_signals": symptoms,
             "local_risk_baseline": risk,
             "retrieved_evidence": evidence[:3],
+            "structured_answers": structured_answers,
         }
         return json.dumps(payload, separators=(",", ":"))
 
@@ -179,15 +190,18 @@ class UnifiedAIEngine:
             while len(recommendations) < 3:
                 recommendations.append("Monitor symptoms and seek professional guidance before progressing.")
             stage = local_plan.stage
-        fatigue = "high" if symptoms.fatigue and symptoms.symptom_count >= 3 else "medium" if symptoms.fatigue else "low"
-        mood = "depressed" if any(term in input_text.lower() for term in ("hopeless", "depressed", "sad")) else "anxious" if any(term in input_text.lower() for term in ("anxious", "anxiety", "worried")) else "calm"
+        fatigue = symptoms.fatigue_level or ("high" if symptoms.fatigue and symptoms.symptom_count >= 3 else "medium" if symptoms.fatigue else "low")
+        mood = symptoms.mood or ("depressed" if any(term in input_text.lower() for term in ("hopeless", "depressed", "sad")) else "anxious" if any(term in input_text.lower() for term in ("anxious", "anxiety", "worried")) else "calm")
         explanation = self.explainability.explain(symptoms, risk, evidence, stage=stage)
+        headache_level = symptoms.headache_level
+        if headache_level is not None and input_text.strip() and symptoms.headache:
+            headache_level = max(headache_level, 10 if symptoms.severe_headache else 5)
         return UnifiedAIResponse(
             symptoms=UnifiedSymptoms(
-                headache=10 if symptoms.severe_headache else 5 if symptoms.headache else 0,
+                headache=headache_level if headache_level is not None else 10 if symptoms.severe_headache else 5 if symptoms.headache else 0,
                 dizziness=symptoms.dizziness,
                 fatigue=fatigue,
-                sleep_quality="poor" if symptoms.sleep_problems else "good",
+                sleep_quality=symptoms.sleep_quality or ("poor" if symptoms.sleep_problems else "good"),
                 mood=mood,
             ),
             risk=UnifiedRisk(risk_level=risk.risk_level, score=risk.score),

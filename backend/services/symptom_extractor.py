@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from backend.schemas.symptom_schema import SymptomSignals
+from backend.schemas.symptom_schema import StructuredCheckIn
 from backend.services.llm_client import LLMClient
 
 
@@ -14,8 +15,11 @@ class SymptomExtractor:
     def __init__(self, llm: LLMClient | None = None) -> None:
         self.llm = None
 
-    def extract(self, text: str) -> SymptomSignals:
-        return self._local_extract(text)
+    def extract(self, text: str, structured_answers: StructuredCheckIn | None = None) -> SymptomSignals:
+        signals = self._local_extract(text)
+        if structured_answers:
+            signals = self._apply_structured_answers(signals, structured_answers)
+        return signals
 
     @property
     def mode(self) -> str:
@@ -73,3 +77,47 @@ class SymptomExtractor:
             onset_or_day=int(day_match.group(1)) if day_match else None,
             raw_text=text,
         )
+
+    @staticmethod
+    def _apply_structured_answers(signals: SymptomSignals, answers: StructuredCheckIn) -> SymptomSignals:
+        values = answers.model_dump(exclude_none=True)
+        if "headache_level" in values:
+            level = values["headache_level"]
+            signals.headache_level = level
+            # Never let a low questionnaire value erase a dangerous phrase
+            # detected in free text; contradictions must resolve conservatively.
+            signals.headache = signals.headache or level > 0
+            signals.severe_headache = signals.severe_headache or level >= 8
+        if "dizziness" in values:
+            signals.dizziness = values["dizziness"]
+        if "fatigue" in values:
+            signals.fatigue_level = values["fatigue"]
+            signals.fatigue = values["fatigue"] != "low"
+        if "sleep_quality" in values:
+            signals.sleep_quality = values["sleep_quality"]
+            signals.sleep_problems = values["sleep_quality"] == "poor"
+        if "mood" in values:
+            signals.mood = values["mood"]
+        if "symptom_change" in values:
+            signals.symptom_change = values["symptom_change"]
+            signals.worsening = signals.worsening or values["symptom_change"] == "worsening"
+        if "activity_response" in values:
+            signals.activity_response = values["activity_response"]
+            if values["activity_response"] == "worsened":
+                signals.worsening = True
+        if "vomiting" in values:
+            vomiting = values["vomiting"]
+            signals.vomiting = vomiting != "none"
+            signals.repeated_vomiting = vomiting == "repeated"
+        for name in values.get("emergency_signs", []):
+            setattr(signals, name, True)
+        signals.symptom_count = sum(
+            value for key, value in signals.model_dump().items()
+            if key not in {
+                "worsening", "symptom_count", "severity", "onset_or_day", "raw_text",
+                "headache_level", "fatigue_level", "sleep_quality", "mood",
+                "symptom_change", "activity_response",
+            } and isinstance(value, bool)
+        )
+        signals.severity = "severe" if signals.severe_headache or signals.vomiting else "moderate" if signals.symptom_count >= 3 else "mild"
+        return signals
