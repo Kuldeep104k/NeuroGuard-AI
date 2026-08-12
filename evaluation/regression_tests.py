@@ -89,6 +89,7 @@ class OfflineRegressionTests(unittest.TestCase):
         )
         self.assertFalse(result.safety.safe)
         self.assertEqual(result.risk.risk_level, "high")
+        self.assertIn("score of 100/100", result.explanation)
         self.assertEqual(result.plan.stage, 1)
 
     def test_structured_answers_override_ambiguous_free_text(self):

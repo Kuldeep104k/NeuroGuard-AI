@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from html import escape
+import os
 import re
 
 import requests
@@ -22,7 +23,6 @@ st.markdown(
     .hero { padding: 1.6rem 1.8rem; border-radius: 1.2rem; background: linear-gradient(135deg, #e6f7f7, #f8fcfc); border: 1px solid #a9dfe0; box-shadow: 0 8px 24px rgba(18, 61, 74, .08); }
     .hero h1 { margin: 0 0 .35rem 0; color: #123d4a; letter-spacing: -.02em; }
     .hero p { color: #315965; margin: .3rem 0; }
-    .status-pill { display: inline-block; margin-top: .7rem; padding: .35rem .7rem; border-radius: 999px; background: #d7f2e4; color: #155b39; font-size: .82rem; font-weight: 700; }
     .section-kicker { color: #2b7a7b; text-transform: uppercase; letter-spacing: .08em; font-size: .76rem; font-weight: 800; margin-top: 1.3rem; }
     .quick-card { padding: .85rem 1rem; border-radius: .8rem; border: 1px solid #d5e3e6; background: rgba(255,255,255,.72); min-height: 6.3rem; }
     .quick-card strong { color: #123d4a; }
@@ -33,11 +33,15 @@ st.markdown(
     [data-testid="stMetricValue"] { letter-spacing: -.03em; }
     .trajectory { display: flex; gap: .55rem; overflow-x: auto; padding: .8rem .2rem 1rem; }
     .trajectory-item { min-width: 8.2rem; padding: .8rem; border-radius: .85rem; border: 1px solid #d5e3e6; background: #fff; box-shadow: 0 3px 10px rgba(18,61,74,.06); }
-    .trajectory-score { font-size: 1.35rem; font-weight: 800; color: #123d4a; }
+    .trajectory-day { font-size: 1.1rem; font-weight: 800; color: #123d4a; }
+    .trajectory-status { display: inline-block; margin-top: .45rem; padding: .2rem .45rem; border-radius: 999px; font-size: .74rem; font-weight: 800; letter-spacing: .03em; }
     .trajectory-meta { color: #52666d; font-size: .82rem; margin-top: .2rem; }
     .trajectory-low { border-top: 4px solid #2ca66f; }
+    .trajectory-low .trajectory-status { background: #d7f2e4; color: #155b39; }
     .trajectory-moderate { border-top: 4px solid #e2a52e; }
+    .trajectory-moderate .trajectory-status { background: #fff1cf; color: #7b5200; }
     .trajectory-high { border-top: 4px solid #d43d3d; }
+    .trajectory-high .trajectory-status { background: #ffe0e0; color: #7a1616; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -62,7 +66,7 @@ STAGE_CONTEXT = {
 
 
 def validate_result(result: dict) -> tuple[bool, str]:
-    """Guard the UI against backend/provider schema drift."""
+    """Guard the UI against recovery-service schema drift."""
     required = {"symptoms", "risk", "plan", "explanation", "safety"}
     if set(result) != required:
         return False, "The backend returned an unexpected response shape."
@@ -210,16 +214,15 @@ def render_trajectory(timeline: list[dict]) -> None:
     for point in points:
         risk_level = str(point.get("risk_level", "unknown")).lower()
         risk_class = risk_level if risk_level in {"low", "moderate", "high"} else "moderate"
-        score = float(point.get("score", 0))
         day_value = escape(str(point.get("day", 0)))
         stage = point.get("stage")
         stage_label = f"Stage {escape(str(stage))}" if stage else "Check-in"
         cards.append(
             f'<div class="trajectory-item trajectory-{risk_class}" '
-            f'aria-label="Recovery day {day_value}, risk score {score:g}, {risk_level} risk">'
-            f'<div class="trajectory-meta">Day {day_value}</div>'
-            f'<div class="trajectory-score">{score:g}/100</div>'
-            f'<div class="trajectory-meta">{escape(risk_level.upper())} risk · {stage_label}</div>'
+            f'aria-label="Recovery day {day_value}, {risk_level} risk, {stage_label}">'
+            f'<div class="trajectory-day">Day {day_value}</div>'
+            f'<div class="trajectory-status">{escape(risk_level.upper())}</div>'
+            f'<div class="trajectory-meta">{stage_label}</div>'
             "</div>"
         )
     st.markdown('<div class="trajectory">' + "".join(cards) + "</div>", unsafe_allow_html=True)
@@ -241,8 +244,7 @@ def render_trajectory(timeline: list[dict]) -> None:
 st.markdown(
     '<div class="hero"><h1>🧠 NeuroGuard AI</h1>'
     '<p class="muted">A privacy-conscious, evidence-grounded concussion recovery companion.</p>'
-    "<p><strong>A calmer way to record symptoms, understand today’s next step, and notice when recovery needs professional attention.</strong></p>"
-    '<span class="status-pill">● Local-first · private by default · no API key required</span></div>',
+    "<p><strong>A calmer way to record symptoms, understand today’s next step, and notice when recovery needs professional attention.</strong></p></div>",
     unsafe_allow_html=True,
 )
 
@@ -259,25 +261,20 @@ if "timeline" not in st.session_state:
     st.session_state.timeline = []
 if "next_recovery_day" not in st.session_state:
     st.session_state.next_recovery_day = 1
+if "timeline_start_date" not in st.session_state:
+    st.session_state.timeline_start_date = date.today()
 
 with st.sidebar:
     st.header("Check-in settings")
     st.metric("Next check-in", f"Day {st.session_state.next_recovery_day}")
     st.caption("Each successful check-in advances the recovery timeline automatically. Previous check-ins remain visible below.")
-    api_url = "http://127.0.0.1:8000"
-    with st.expander("Advanced connection settings", expanded=False):
-        api_url = st.text_input("Backend URL", api_url, help="The frontend sends check-ins to this backend service.")
-    if st.button("Clear local timeline"):
-        st.session_state.timeline = []
-        st.session_state.pop("latest", None)
-        st.session_state.next_recovery_day = 1
-        st.rerun()
     if st.button("Start new recovery timeline", type="secondary", use_container_width=True):
         st.session_state.timeline = []
         st.session_state.pop("latest", None)
         st.session_state.next_recovery_day = 1
+        st.session_state.timeline_start_date = date.today()
         st.rerun()
-    st.caption("Use this for a new person or injury. It clears this browser session’s stored check-ins and starts again at Day 1.")
+    st.caption("Use this for a new person or injury. It clears this browser session’s stored check-ins, resets the timeline date, and starts again at Day 1.")
     st.divider()
     st.caption("Privacy: symptom text is sent to the configured backend. The backend redacts raw text from logs by default.")
 
@@ -338,7 +335,7 @@ if submitted:
                 for item in st.session_state.timeline
             ]
             response = requests.post(
-                f"{api_url.rstrip('/')}/analyze",
+                f"{os.getenv('NEUROGUARD_BACKEND_URL', 'http://127.0.0.1:8000').rstrip('/')}/analyze",
                 json={"input_text": input_text, "day": int(day), "history": history, "structured_answers": structured_answers},
                 timeout=30,
             )
@@ -348,11 +345,9 @@ if submitted:
             if not valid:
                 st.error(validation_message)
                 st.stop()
-            st.session_state.latest_ai_mode = response.headers.get("X-NeuroGuard-AI-Mode", "unknown")
-            st.session_state.latest_llm_calls = response.headers.get("X-NeuroGuard-LLM-Calls", "unknown")
             st.session_state.latest = result
             timeline_entry = {
-                "checkin_date": date.today().isoformat(),
+                "checkin_date": (st.session_state.timeline_start_date + timedelta(days=day - 1)).isoformat(),
                 "day": int(day),
                 "score": result["risk"]["score"],
                 "risk_level": result["risk"]["risk_level"],
@@ -383,13 +378,6 @@ if result:
         st.metric("Risk score", f"{result['risk']['score']}/100")
     with metric_right:
         st.metric("Recovery stage", f"{result['plan']['stage']}/5")
-    st.caption(
-        "AI pipeline: "
-        f"mode={st.session_state.get('latest_ai_mode', 'unknown')} · "
-        f"LLM calls={st.session_state.get('latest_llm_calls', 'unknown')} · "
-        "policy=max 1 call/request"
-    )
-
     render_trajectory(st.session_state.timeline)
 
     plan_left, plan_right = st.columns([1.5, 1])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from backend.config import AI_MODE, MAX_LLM_RPD, MAX_LLM_RPM
@@ -232,7 +233,19 @@ class UnifiedAIEngine:
                 safe=False,
                 alert=response.safety.alert or "The response was blocked by the safety layer. Seek qualified professional guidance.",
             )
+        response.explanation = self._synchronize_explanation_score(response.explanation, response.risk.risk_level, response.risk.score)
         source_suffix = " Evidence: " + " | ".join(evidence[:3])
         if source_suffix not in response.explanation:
             response.explanation = response.explanation.rstrip() + source_suffix
         return response
+
+    @staticmethod
+    def _synchronize_explanation_score(explanation: str, risk_level: str, score: float) -> str:
+        """Keep the human-readable explanation aligned with the final guarded result."""
+        score_text = f"{score:g}"
+        replacement = f"The estimated risk is {risk_level} with a score of {score_text}/100"
+        pattern = r"The estimated risk is [a-z]+ with a score of [0-9]+(?:\.[0-9]+)?/100"
+        synchronized, count = re.subn(pattern, replacement, explanation, count=1, flags=re.IGNORECASE)
+        if count:
+            return synchronized
+        return f"{replacement}. {explanation.lstrip()}"
