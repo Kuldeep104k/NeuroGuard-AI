@@ -4,6 +4,13 @@ NeuroGuard AI is a safety-first concussion recovery companion that helps people 
 
 > **Important:** NeuroGuard AI is educational decision support. It does not diagnose, treat, or replace professional medical care. Severe, rapidly worsening, or emergency symptoms require immediate local medical help.
 
+## Try NeuroGuard AI
+
+- [Open the live NeuroGuard application](https://neuroguard-frontend.onrender.com)
+- [Check the live recovery service](https://neuroguard-backend-3su2.onrender.com/health)
+
+The application is deployed on Render with a Streamlit interface connected to a FastAPI recovery service. It runs in local deterministic mode and does not require user credentials or external model access.
+
 ## What it does
 
 - Converts a written check-in and optional guided answers into a structured symptom summary.
@@ -78,6 +85,15 @@ The checks cover response validation, structured check-ins, safety escalation, p
 ## Privacy defaults
 
 Raw symptom text is not stored by default. Optional local settings can be copied from `.env.example`. Keep any private deployment configuration outside version control.
+
+## Deployment
+
+The project is deployed as two Render web services:
+
+- Frontend: `streamlit run frontend/streamlit_app.py --server.address 0.0.0.0 --server.port $PORT`
+- Recovery service: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+
+The frontend service uses `NEUROGUARD_BACKEND_URL` to locate the deployed recovery service. Keep that value in the deployment environment rather than hard-coding a private service address in source code.
 
 ## Responsible use
 
